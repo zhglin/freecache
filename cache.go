@@ -10,18 +10,23 @@ import (
 
 const (
 	// segmentCount represents the number of segments within a freecache instance.
+	// segmentCount表示freecache实例中的段数。
 	segmentCount = 256
 	// segmentAndOpVal is bitwise AND applied to the hashVal to find the segment id.
+	// segmentAndOpVal是按位的，并应用到hashVal来查找segment id。
 	segmentAndOpVal = 255
-	minBufSize      = 512 * 1024
+	// 最小内存
+	minBufSize = 512 * 1024
 )
 
 // Cache is a freecache instance.
+// cache实例
 type Cache struct {
 	locks    [segmentCount]sync.Mutex
 	segments [segmentCount]segment
 }
 
+// hash函数
 func hashFunc(data []byte) uint64 {
 	return xxhash.Sum64(data)
 }
@@ -31,11 +36,14 @@ func hashFunc(data []byte) uint64 {
 // If the size is set relatively large, you should call
 // `debug.SetGCPercent()`, set it to a much smaller value
 // to limit the memory consumption and GC pause time.
+// NewCache返回一个新初始化的缓存大小。缓存大小将被设置为最小512KB。
+// 如果大小设置的比较大，你应该调用' debug.SetGCPercent() '，将其设置为一个小得多的值，以限制内存消耗和GC暂停时间。
 func NewCache(size int) (cache *Cache) {
 	return NewCacheCustomTimer(size, defaultTimer{})
 }
 
 // NewCacheCustomTimer returns new cache with custom timer.
+// 返回带有自定义计时器的新缓存。
 func NewCacheCustomTimer(size int, timer Timer) (cache *Cache) {
 	if size < minBufSize {
 		size = minBufSize
@@ -44,6 +52,7 @@ func NewCacheCustomTimer(size int, timer Timer) (cache *Cache) {
 		timer = defaultTimer{}
 	}
 	cache = new(Cache)
+	// 初始化segment
 	for i := 0; i < segmentCount; i++ {
 		cache.segments[i] = newSegment(size/segmentCount, i, timer)
 	}
@@ -54,6 +63,8 @@ func NewCacheCustomTimer(size int, timer Timer) (cache *Cache) {
 // If the key is larger than 65535 or value is larger than 1/1024 of the cache size,
 // the entry will not be written to the cache. expireSeconds <= 0 means no expire,
 // but it can be evicted when cache is full.
+// Set设置缓存项的键、值和过期时间，并将其存储在缓存中。
+// 如果key大于65535或者value大于缓存大小的1/1024，该条目将不会被写入缓存。expireSeconds <= 0表示没有过期，但是当缓存满时，它可以被驱逐。
 func (cache *Cache) Set(key, value []byte, expireSeconds int) (err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -65,6 +76,7 @@ func (cache *Cache) Set(key, value []byte, expireSeconds int) (err error) {
 
 // Touch updates the expiration time of an existing key. expireSeconds <= 0 means no expire,
 // but it can be evicted when cache is full.
+// 更新现有密钥的过期时间。expiresecseconds <= 0表示没有过期，但当缓存满时可以清除过期。
 func (cache *Cache) Touch(key []byte, expireSeconds int) (err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -75,6 +87,7 @@ func (cache *Cache) Touch(key []byte, expireSeconds int) (err error) {
 }
 
 // Get returns the value or not found error.
+// Get返回值或未找到的错误。
 func (cache *Cache) Get(key []byte) (value []byte, err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -92,7 +105,10 @@ func (cache *Cache) Get(key []byte) (value []byte, err error) {
 // is when the value wraps around the underlying segment ring buffer.
 //
 // The method will return ErrNotFound is there's a miss, and the function will
-// not be called. Errors returned by the function will be propagated.
+// not be called. Errors returned by the function will be propagated
+// GetFn等价于Get或GetWithBuf，但它尝试为零拷贝，在内存中使用切片视图调用所提供的函数的当前基础值。切片的长度和容量受到限制。
+// 这个方法不会分配字节缓冲区。唯一的例外是当值将底层的段循环缓冲区包装起来时。
+// 该方法将返回ErrNotFound，因为有一个miss，并且该函数将不会被调用。函数返回的错误将被传播。
 func (cache *Cache) GetFn(key []byte, fn func([]byte) error) (err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -104,6 +120,7 @@ func (cache *Cache) GetFn(key []byte, fn func([]byte) error) (err error) {
 
 // GetOrSet returns existing value or if record doesn't exist
 // it sets a new key, value and expiration for a cache entry and stores it in the cache, returns nil in that case
+// 返回已存在的值，或者如果记录不存在，它设置一个新的键值和缓存条目的过期时间，并将其存储在缓存中，在这种情况下返回nil
 func (cache *Cache) GetOrSet(key, value []byte, expireSeconds int) (retValue []byte, err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -122,6 +139,9 @@ func (cache *Cache) GetOrSet(key, value []byte, expireSeconds int) (retValue []b
 // the entry will not be written to the cache. expireSeconds <= 0 means no expire,
 // but it can be evicted when cache is full.  Returns existing value if record exists
 // with a bool value to indicate whether an existing record was found
+// SetAndGet设置缓存项的键、值和过期时间，并将其存储在缓存中。
+//如果key大于65535或者value大于缓存大小的1/1024，
+//该条目将不会被写入缓存。expireSeconds <= 0表示没有过期，但是当缓存满时，它可以被驱逐。如果记录存在，则返回现有值，并使用bool值指示是否找到现有记录
 func (cache *Cache) SetAndGet(key, value []byte, expireSeconds int) (retValue []byte, found bool, err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -137,6 +157,7 @@ func (cache *Cache) SetAndGet(key, value []byte, expireSeconds int) (retValue []
 }
 
 // Peek returns the value or not found error, without updating access time or counters.
+// 返回值或未找到错误，不更新访问时间或计数器。
 func (cache *Cache) Peek(key []byte) (value []byte, err error) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal
@@ -196,6 +217,7 @@ func (cache *Cache) TTL(key []byte) (timeLeft uint32, err error) {
 }
 
 // Del deletes an item in the cache by key and returns true or false if a delete occurred.
+// 按键删除缓存中的项，并在删除发生时返回true或false。
 func (cache *Cache) Del(key []byte) (affected bool) {
 	hashVal := hashFunc(key)
 	segID := hashVal & segmentAndOpVal

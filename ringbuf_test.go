@@ -7,8 +7,9 @@ import (
 func TestRingBuf(t *testing.T) {
 	rb := NewRingBuf(16, 0)
 	for i := 0; i < 2; i++ {
-		rb.Write([]byte("fghibbbbccccddde"))
-		rb.Write([]byte("fghibbbbc"))
+		rb.Write([]byte("fghibbbbccccdd"))
+		rb.Write([]byte("111111"))
+		rb.Write([]byte("fghibbbbccccdd"))
 		rb.Resize(16)
 		off := rb.Evacuate(9, 3)
 		t.Log(string(rb.Dump()))
